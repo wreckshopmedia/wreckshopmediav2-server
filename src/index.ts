@@ -1,13 +1,24 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import postgres from "postgres";
 
 const sql = postgres(process.env.DATABASE_URL!);
 const app = new Hono();
 
+app.use(
+  "/api/*",
+  cors({
+    origin: [
+      "http://localhost:5371", // your local dev frontend
+      "https://wreckshopmedia.com", // production
+      "https://www.wreckshopmedia.com",
+    ],
+  }),
+);
+
 app.get("/", (c) => c.text("Ye ol' Wreck Shop Media API"));
 app.get("/api/visits", (c) => c.text("Nooooo...Suparman no ess heeeeere..."));
-
 
 app.get("/api/messages", async (c) => {
   const rows =
