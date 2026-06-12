@@ -5,7 +5,9 @@ import postgres from "postgres";
 const sql = postgres(process.env.DATABASE_URL!);
 const app = new Hono();
 
-app.get("/", (c) => c.text("Wreck Shop Media API"));
+app.get("/", (c) => c.text("Ye ol' Wreck Shop Media API"));
+app.get("/api/visits", (c) => c.text("Nooooo...Suparman no ess heeeeere..."));
+
 
 app.get("/api/messages", async (c) => {
   const rows =
