@@ -37,6 +37,7 @@ async function migrate() {
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS pos_x REAL`;
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS pos_y REAL`;
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS rotation REAL`;
+  await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE`;
   console.log("migration ok - sticky columns present");
 }
 
@@ -60,8 +61,10 @@ app.get("/api/visits", (c) => c.text("Nooooo...Suparman no ess heeeeere..."));
  * currently automatically grabs on /rants route
  */
 app.get("/api/messages", async (c) => {
+  // deleted IS NOT TRUE keeps soft-deleted notes off the board while still
+  // matching legacy rows where deleted is NULL (pre-migration inserts)
   const rows =
-    await sql`SELECT id, name, message, created_at, color, pos_x, pos_y, rotation FROM messages ORDER BY created_at DESC`;
+    await sql`SELECT id, name, message, created_at, color, pos_x, pos_y, rotation FROM messages WHERE deleted IS NOT TRUE ORDER BY created_at DESC`;
   return c.json(rows);
 });
 
@@ -98,13 +101,48 @@ app.patch("/api/messages/:id", async (c) => {
   return c.json(row);
 });
 
-/** DELETE - /api/messages/:id - trash a note for good. */
+/* 
+add a put or patch (which is more appropriate???) to updated the 
+boolean "deleted" column of row accordingly instead of actually deleting it.
+*/
+app.patch("/api/messages/:id/delete", async (c) => {
+  const id = Number(c.req.param("id"));
+  const [row] = await sql`
+    UPDATE messages SET deleted = TRUE
+    WHERE id = ${id} RETURNING *`;
+  if (!row) return c.json({ error: "not found" }, 404);
+  return c.json(row);
+});
+
+/**
+ * TODO: consider adding this somehow for ME ONLY to access somehow
+ * to undelete and do other admin tasks per visitor request or just because
+ * i feel like it 😄
+ */
+app.patch("/api/messages/:id/undelete", async (c) => {
+  const id = Number(c.req.param("id"));
+  const [row] = await sql`
+    UPDATE messages SET deleted = FALSE
+    WHERE id = ${id} RETURNING *`;
+  if (!row) return c.json({ error: "not found" }, 404);
+  return c.json(row);
+});
+
+/** DELETE - /api/messages/:id - trash a note for good.
+ * PARKED - DISABLING THIS IN LIEU OF A "DELETED" COLUMN
+ * TODO: consider adding this somehow for ME ONLY to access somehow
+ * to permanently delete notes per visitor request or just because
+ * i feel like it 😄
+ */
 app.delete("/api/messages/:id", async (c) => {
   const id = Number(c.req.param("id"));
   await sql`DELETE FROM messages WHERE id = ${id}`;
   return c.json({ ok: true });
 });
 
+/** POST - /api/visits - record a site visit. Expects session_id and path in the request body.
+ * TODO: write up something for this to get me some dang metrics
+ */
 app.post("/api/visits", async (c) => {
   const { session_id, path } = await c.req.json();
   await sql`INSERT INTO visits (session_id, path) VALUES (${session_id}, ${path})`;
