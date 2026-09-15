@@ -5,7 +5,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "dev": "node --env-file=.env --import tsx src/index.ts",
     "start": "node --import tsx src/index.ts",
     "typecheck": "tsc --noEmit"
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^25.9.3",
     "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.0"
   }
 }

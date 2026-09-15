@@ -1,15 +1,6 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import postgres from "postgres";
-
-// onnotice no-op silences the harmless "column already exists, skipping" NOTICEs
-// the idempotent migration emits on every boot after the first
-const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
-const app = new Hono();
-
-// how many colors the sticky-note palette cycles through (must match the client)
-const PALETTE_SIZE = 5;
+import { app } from "./app";
+import { sql } from "./db";
 
 /**
  * Idempotent migration - runs on boot so Railway self-applies on deploy.
@@ -40,114 +31,6 @@ async function migrate() {
   await sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE`;
   console.log("migration ok - sticky columns present");
 }
-
-app.use(
-  "/api/*",
-  cors({
-    origin: [
-      "http://localhost:5371", // your local dev frontend
-      "https://wreckshopmedia.com", // production
-      "https://www.wreckshopmedia.com",
-    ],
-    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  }),
-);
-
-app.get("/", (c) => c.text("Ye ol' Wreck Shop Media API"));
-app.get("/api/visits", (c) => c.text("Nooooo...Suparman no ess heeeeere..."));
-
-/**
- * GET - /api/messages - fetch rant submissions
- * currently automatically grabs on /rants route
- */
-app.get("/api/messages", async (c) => {
-  // deleted IS NOT TRUE keeps soft-deleted notes off the board while still
-  // matching legacy rows where deleted is NULL (pre-migration inserts)
-  const rows =
-    await sql`SELECT id, name, message, created_at, color, pos_x, pos_y, rotation FROM messages WHERE deleted IS NOT TRUE ORDER BY created_at DESC`;
-  return c.json(rows);
-});
-
-app.post("/api/messages", async (c) => {
-  const { name, message, color } = await c.req.json();
-  // the client owns the color cycle (a session cursor that only advances on
-  // submit, never on delete), so honor the color it sends. fall back to one past
-  // the newest note's color only if the client didn't supply one.
-  let finalColor: number;
-  if (typeof color === "number") {
-    finalColor = ((color % PALETTE_SIZE) + PALETTE_SIZE) % PALETTE_SIZE;
-  } else {
-    const [last] = await sql`
-      SELECT COALESCE(color, (id % ${PALETTE_SIZE})) AS c
-      FROM messages ORDER BY id DESC LIMIT 1`;
-    finalColor = last ? (Number(last.c) + 1) % PALETTE_SIZE : 0;
-  }
-  const [row] =
-    await sql`INSERT INTO messages (name, message, color) VALUES (${name}, ${message}, ${finalColor}) RETURNING *`;
-  return c.json(row, 201);
-});
-
-/**
- * PATCH - /api/messages/:id - persist where a note was dropped.
- * pos_x / pos_y are 0-1 fractions of the canvas; rotation is degrees.
- */
-app.patch("/api/messages/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  const { pos_x, pos_y, rotation } = await c.req.json();
-  const [row] = await sql`
-    UPDATE messages SET pos_x = ${pos_x}, pos_y = ${pos_y}, rotation = ${rotation}
-    WHERE id = ${id} RETURNING *`;
-  if (!row) return c.json({ error: "not found" }, 404);
-  return c.json(row);
-});
-
-/* 
-add a put or patch (which is more appropriate???) to updated the 
-boolean "deleted" column of row accordingly instead of actually deleting it.
-*/
-app.patch("/api/messages/:id/delete", async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await sql`
-    UPDATE messages SET deleted = TRUE
-    WHERE id = ${id} RETURNING *`;
-  if (!row) return c.json({ error: "not found" }, 404);
-  return c.json(row);
-});
-
-/**
- * TODO: consider adding this somehow for ME ONLY to access somehow
- * to undelete and do other admin tasks per visitor request or just because
- * i feel like it 😄
- */
-app.patch("/api/messages/:id/undelete", async (c) => {
-  const id = Number(c.req.param("id"));
-  const [row] = await sql`
-    UPDATE messages SET deleted = FALSE
-    WHERE id = ${id} RETURNING *`;
-  if (!row) return c.json({ error: "not found" }, 404);
-  return c.json(row);
-});
-
-/** DELETE - /api/messages/:id - trash a note for good.
- * PARKED - DISABLING THIS IN LIEU OF A "DELETED" COLUMN
- * TODO: consider adding this somehow for ME ONLY to access somehow
- * to permanently delete notes per visitor request or just because
- * i feel like it 😄
- */
-app.delete("/api/messages/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  await sql`DELETE FROM messages WHERE id = ${id}`;
-  return c.json({ ok: true });
-});
-
-/** POST - /api/visits - record a site visit. Expects session_id and path in the request body.
- * TODO: write up something for this to get me some dang metrics
- */
-app.post("/api/visits", async (c) => {
-  const { session_id, path } = await c.req.json();
-  await sql`INSERT INTO visits (session_id, path) VALUES (${session_id}, ${path})`;
-  return c.json({ ok: true }, 201);
-});
 
 const port = Number(process.env.PORT) || 4321;
 
