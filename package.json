@@ -8,6 +8,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "node --env-file=.env --import tsx src/index.ts",
+    "db:tunnel": "railway connect Postgres --tunnel-only --port 5433",
     "start": "node --import tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
