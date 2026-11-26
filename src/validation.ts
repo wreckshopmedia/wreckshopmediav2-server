@@ -9,7 +9,7 @@
 export const PALETTE_SIZE = 5;
 
 /** Mirrors the compose pad's caps in ComposePad.tsx - keep the two in sync. */
-export const MAX_MESSAGE_LENGTH = 200;
+export const MAX_MESSAGE_LENGTH = 165;
 export const MAX_NAME_LENGTH = 35;
 
 /** Visits are internal telemetry, so the caps are just anti-garbage, not product rules. */
